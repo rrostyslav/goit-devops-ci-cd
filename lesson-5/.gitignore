@@ -1,0 +1,25 @@
+# Локальні каталоги та кеш Terraform
+**/.terraform/*
+.terraform/
+.terraform.lock.hcl
+
+# Файли стейту (не повинні потрапляти у репозиторій)
+*.tfstate
+*.tfstate.*
+*.tfstate.backup
+
+# Файли зі змінними (можуть містити чутливі дані)
+*.tfvars
+*.tfvars.json
+!*.tfvars.example
+
+# Плани та crash-логи
+*.tfplan
+crash.log
+crash.*.log
+
+# Локальні override-файли
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
