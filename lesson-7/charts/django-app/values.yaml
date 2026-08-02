@@ -1,0 +1,137 @@
+# =============================================================================
+# Образ Django з ECR
+# =============================================================================
+# УВАГА: ключі `image.repository` та `image.tag` мають називатися саме так —
+# їх програмно оновлює пайплайн Jenkins у наступних темах (`--set image.tag=...`
+# або `yq` по цьому файлу), а Argo CD читає їх під час синхронізації.
+#
+# Актуальний URL: `terraform output -raw ecr_repository_url`
+image:
+  repository: 918349930062.dkr.ecr.us-west-2.amazonaws.com/django-app
+  tag: "latest"
+  pullPolicy: IfNotPresent
+
+# Секрети для приватних реєстрів. Для ECR не потрібні: ноди тягнуть образи
+# за IAM-роллю з політикою AmazonEC2ContainerRegistryReadOnly.
+imagePullSecrets: []
+
+nameOverride: ""
+fullnameOverride: ""
+
+# Стартова кількість реплік. Коли autoscaling увімкнено, стартовим значенням
+# стає autoscaling.minReplicas, а далі кількістю подів керує HPA.
+replicaCount: 2
+
+# =============================================================================
+# Service — зовнішній доступ
+# =============================================================================
+service:
+  type: LoadBalancer
+  # Порт балансувальника (ззовні).
+  port: 80
+  # Порт контейнера, на якому слухає gunicorn.
+  targetPort: 8000
+  annotations: {}
+
+# =============================================================================
+# Ресурси контейнера
+# =============================================================================
+# `requests.cpu` — обов'язкове поле: саме від нього HPA рахує утилізацію.
+# Без нього `kubectl get hpa` назавжди залишиться з <unknown>/70%.
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+# =============================================================================
+# Horizontal Pod Autoscaler
+# =============================================================================
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 6
+  targetCPUUtilizationPercentage: 70
+  # Необов'язково: додаткова метрика по пам'яті.
+  targetMemoryUtilizationPercentage: null
+
+# =============================================================================
+# ConfigMap — несекретні змінні середовища (перенесені з теми 4)
+# =============================================================================
+# Усі ключі підключаються до контейнера через `envFrom.configMapRef`.
+config:
+  DJANGO_SETTINGS_MODULE: myproject.settings
+  DJANGO_ENV: production
+  DJANGO_DEBUG: "False"
+  DJANGO_ALLOWED_HOSTS: "*"
+  POSTGRES_DB: django_db
+  POSTGRES_USER: django_user
+  # Порожньо → підставиться ім'я сервісу вбудованого PostgreSQL
+  # (<release>-postgres). Для зовнішньої БД (RDS) вкажіть її хост тут.
+  POSTGRES_HOST: ""
+  POSTGRES_PORT: "5432"
+
+# =============================================================================
+# Secret — чутливі змінні середовища
+# =============================================================================
+# Паролям і ключам не місце в ConfigMap: його вміст читає будь-який workload
+# у неймспейсі. Механізм підключення той самий (`envFrom`), інший тип ресурсу.
+# Для реального середовища значення передавайте через
+# `--set secrets.POSTGRES_PASSWORD=...`, а не тримайте у файлі.
+secrets:
+  POSTGRES_PASSWORD: django_password
+  DJANGO_SECRET_KEY: "django-insecure-hk^la02zqreo8352i*&+p_6g(bu0+ohmw*2x0)1hd7^0*i8yb_"
+
+# =============================================================================
+# Проби
+# =============================================================================
+livenessProbe:
+  httpGet:
+    path: /healthz/
+    port: http
+  initialDelaySeconds: 20
+  periodSeconds: 20
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+readinessProbe:
+  httpGet:
+    path: /healthz/
+    port: http
+  initialDelaySeconds: 5
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+# =============================================================================
+# Інше
+# =============================================================================
+podAnnotations: {}
+podLabels: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+podSecurityContext: {}
+securityContext: {}
+
+# =============================================================================
+# Вбудований PostgreSQL (для демонстрації, поза умовою завдання)
+# =============================================================================
+# Дає застосунку живу базу, щоб було видно, що змінні з ConfigMap і Secret
+# справді працюють. Дані зберігаються в emptyDir, тобто зникають разом з подом —
+# для навчального стенду цього достатньо, а PVC не потребує EBS CSI-драйвера.
+# Поставте `enabled: false`, якщо використовуєте зовнішню БД (RDS).
+postgres:
+  enabled: true
+  image: postgres:15
+  port: 5432
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
