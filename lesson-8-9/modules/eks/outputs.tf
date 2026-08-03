@@ -62,3 +62,8 @@ output "kubeconfig_command" {
   description = "Команда налаштування kubectl на цей кластер"
   value       = "aws eks update-kubeconfig --region ${data.aws_region.current.name} --name ${aws_eks_cluster.main.name}"
 }
+
+output "default_storage_class_name" {
+  description = "Ім'я дефолтного StorageClass — для PVC, які хочуть вказати клас явно"
+  value       = kubernetes_storage_class.default.metadata[0].name
+}

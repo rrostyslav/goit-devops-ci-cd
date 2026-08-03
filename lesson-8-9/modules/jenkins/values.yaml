@@ -122,12 +122,16 @@ controller:
               }
 
 # JENKINS_HOME на EBS-томі: без нього кожен рестарт пода стирає історію збірок
-# і змушує наново тягнути плагіни. Диск створює aws-ebs-csi-driver (модуль eks),
-# storageClass не вказуємо — беремо дефолтний gp2, який EKS створює сам.
+# і змушує наново тягнути плагіни. Диск створює aws-ebs-csi-driver (модуль eks).
+#
+# storageClass вказуємо явно, а не покладаємось на дефолтний клас кластера:
+# EKS створює клас `gp2`, але НЕ позначає його дефолтним, тож PVC без явного
+# класу нікуди не прив'язується й вічно висить у Pending.
 persistence:
   enabled: true
   size: ${persistence_size}
   accessMode: ReadWriteOnce
+  storageClass: "${persistence_storage_class}"
 
 # ServiceAccount агентів. Анотація role-arn — це і є вмикач IRSA: вебхук EKS
 # побачить її й підкине подам AWS_ROLE_ARN та AWS_WEB_IDENTITY_TOKEN_FILE,

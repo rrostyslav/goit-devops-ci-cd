@@ -121,3 +121,9 @@ variable "tags" {
   type        = map(string)
   default     = {}
 }
+
+variable "default_storage_class_name" {
+  description = "Ім'я StorageClass, який модуль створює й позначає дефолтним. EKS свій дефолтний клас не створює"
+  type        = string
+  default     = "gp3"
+}

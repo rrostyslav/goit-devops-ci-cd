@@ -475,8 +475,30 @@ terraform apply
 
 Кластер, VPC і NAT при цьому не чіпаються — перестворюється лише node group.
 
-**Под Jenkins висить у `Pending`, PVC теж `Pending`.**
-Немає EBS CSI-драйвера. Перевірте: `kubectl get pods -n kube-system | grep ebs-csi`
+**Под Jenkins висить у `Pending`, PVC теж `Pending`, у подіях —
+`no persistent volumes available for this claim and no storage class is set`.**
+
+Драйвер тут ні до чого — перевірте спершу StorageClass:
+
+```bash
+kubectl get storageclass
+```
+
+Якщо в жодного класу немає позначки `(default)` — це воно. EKS створює клас
+`gp2`, але **не робить його дефолтним** (і досі описує через застарілий
+in-tree провізіонер `kubernetes.io/aws-ebs`). PVC без явного
+`storageClassName` у такому кластері не прив'язується ніколи.
+
+Модуль `eks` тому створює власний клас `gp3` і позначає його дефолтним
+(`modules/eks/aws_ebs_csi_driver.tf`), а модуль `jenkins` ще й вказує його
+явно. Якщо ви прибрали одне з двох — поверніть.
+
+Виправляти після невдалого apply нічого не треба: Terraform помічає
+зламаний Helm-реліз як `tainted` і на наступному `apply` знімає його разом
+з битим PVC та ставить наново.
+
+**Под Jenkins у `Pending`, але StorageClass дефолтний є.**
+Тоді справді драйвер: `kubectl get pods -n kube-system | grep ebs-csi`
 і `kubectl describe pvc jenkins -n jenkins`.
 
 **Стадія `Build & push to ECR` падає з `no basic auth credentials` або

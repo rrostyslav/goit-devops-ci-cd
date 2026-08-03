@@ -12,5 +12,11 @@ terraform {
       source  = "hashicorp/tls"
       version = "~> 4.0"
     }
+    # Для StorageClass: EKS ставить CSI-драйвер, але клас сховища —
+    # це вже об'єкт Kubernetes, а не ресурс AWS.
+    kubernetes = {
+      source  = "hashicorp/kubernetes"
+      version = "~> 2.35"
+    }
   }
 }

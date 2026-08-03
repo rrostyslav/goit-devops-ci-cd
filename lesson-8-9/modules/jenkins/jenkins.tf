@@ -139,12 +139,13 @@ resource "helm_release" "jenkins" {
 
   values = [
     templatefile("${path.module}/values.yaml", {
-      service_type          = var.service_type
-      persistence_size      = var.persistence_size
-      admin_secret_name     = kubernetes_secret.admin.metadata[0].name
-      github_secret_name    = kubernetes_secret.github.metadata[0].name
-      agent_service_account = var.agent_service_account
-      agent_role_arn        = aws_iam_role.agent.arn
+      service_type              = var.service_type
+      persistence_size          = var.persistence_size
+      persistence_storage_class = var.persistence_storage_class
+      admin_secret_name         = kubernetes_secret.admin.metadata[0].name
+      github_secret_name        = kubernetes_secret.github.metadata[0].name
+      agent_service_account     = var.agent_service_account
+      agent_role_arn            = aws_iam_role.agent.arn
 
       job_name         = var.job_name
       git_repo_url     = var.git_repo_url

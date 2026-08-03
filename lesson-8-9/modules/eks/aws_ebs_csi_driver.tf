@@ -68,3 +68,43 @@ resource "aws_eks_addon" "ebs_csi" {
     aws_iam_role_policy_attachment.ebs_csi,
   ]
 }
+
+# =============================================================================
+# StorageClass за замовчуванням
+# =============================================================================
+# Драйвера самого по собі не достатньо. EKS створює клас `gp2`, але **не
+# позначає його дефолтним** і досі описує через in-tree провізіонер
+# `kubernetes.io/aws-ebs`. Для PVC без явного `storageClassName` це означає
+# «класу немає»: том ніхто не створює, PVC вічно висить у Pending, а под,
+# який його чекає, — у Pending разом з ним. Саме так помирає Jenkins.
+#
+# Тому оголошуємо власний клас на CSI-драйвері й робимо його дефолтним.
+resource "kubernetes_storage_class" "default" {
+  metadata {
+    name = var.default_storage_class_name
+
+    annotations = {
+      # Той самий рядок, якого бракує класу gp2 від EKS.
+      "storageclass.kubernetes.io/is-default-class" = "true"
+    }
+  }
+
+  storage_provisioner = "ebs.csi.aws.com"
+  reclaim_policy      = "Delete"
+
+  # Створювати диск лише тоді, коли под уже розподілений на ноду. Інакше в
+  # мультизональному кластері EBS-том може виникнути в us-west-2a, под —
+  # поїхати на ноду в us-west-2b, і примонтувати його стане неможливо:
+  # том не перетинає межу зони доступності.
+  volume_binding_mode    = "WaitForFirstConsumer"
+  allow_volume_expansion = true
+
+  # gp3 дешевший за gp2 приблизно на 20% і дає 3000 IOPS базово,
+  # незалежно від розміру диска.
+  parameters = {
+    type      = "gp3"
+    encrypted = "true"
+  }
+
+  depends_on = [aws_eks_addon.ebs_csi]
+}

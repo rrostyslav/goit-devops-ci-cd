@@ -131,3 +131,9 @@ variable "tags" {
   type        = map(string)
   default     = {}
 }
+
+variable "persistence_storage_class" {
+  description = "StorageClass для PVC Jenkins. Порожньо — брати дефолтний клас кластера"
+  type        = string
+  default     = ""
+}

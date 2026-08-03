@@ -176,6 +176,10 @@ module "jenkins" {
 
   service_type = var.expose_ui_via_load_balancer ? "LoadBalancer" : "ClusterIP"
 
+  # Клас сховища вказуємо явно: EKS створює `gp2`, але не робить його
+  # дефолтним, тож PVC без явного класу вічно висить у Pending.
+  persistence_storage_class = module.eks.default_storage_class_name
+
   # Без нод і CSI-драйвера PVC Jenkins нема кому обслужити.
   depends_on = [module.eks]
 }
