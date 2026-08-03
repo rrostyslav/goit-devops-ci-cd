@@ -1,0 +1,237 @@
+// =============================================================================
+// django-app-ci — збірка образу, публікація в ECR і оновлення Helm-чарта
+// =============================================================================
+// Джобу створює JCasC (modules/jenkins/values.yaml), тож сюди вона приходить
+// уже з глобальними змінними середовища, які проставив Terraform:
+//
+//   ECR_REPOSITORY      — 918349930062.dkr.ecr.us-west-2.amazonaws.com/django-app
+//   AWS_DEFAULT_REGION  — us-west-2
+//   DOCKER_CONTEXT_PATH — Project/Django
+//   CHART_VALUES_PATH   — Project/charts/django-app/values.yaml
+//   GIT_REPO_URL        — https://github.com/rrostyslav/goit-devops-ci-cd.git
+//   GIT_TARGET_BRANCH   — final-project
+//
+// Тому в цьому файлі немає жодного захардкодженого URL, регіону чи шляху:
+// перейменували папку в main.tf — пайплайн підхопив це сам.
+
+pipeline {
+
+    agent {
+        kubernetes {
+            // serviceAccountName має збігатися зі змінною `agent_service_account`
+            // модуля jenkins: саме до цього ServiceAccount прив'язана IAM-роль,
+            // з якою Kaniko отримує право на push у ECR (IRSA).
+            yaml '''
+apiVersion: v1
+kind: Pod
+spec:
+  serviceAccountName: jenkins-agent
+  containers:
+    # Збирає образ без Docker-демона: у Kubernetes немає доступу до
+    # /var/run/docker.sock, а привілейований контейнер заради збірки —
+    # погана ідея. Потрібен саме -debug: у ньому є shell, без якого
+    # Jenkins не може виконати жодного кроку в контейнері.
+    - name: kaniko
+      image: gcr.io/kaniko-project/executor:v1.24.0-debug
+      command: ["/busybox/cat"]
+      tty: true
+      workingDir: /home/jenkins/agent
+      resources:
+        requests:
+          cpu: 300m
+          memory: 768Mi
+        limits:
+          cpu: 1500m
+          memory: 2Gi
+
+    # Правка YAML структурним інструментом, а не sed: sed не знає, що таке
+    # `image.tag`, і мовчки зіпсує файл, щойно в ньому з'явиться інший ключ
+    # з такою ж назвою.
+    - name: yq
+      image: mikefarah/yq:4.53.3
+      command: ["cat"]
+      tty: true
+      workingDir: /home/jenkins/agent
+      resources:
+        requests:
+          cpu: 50m
+          memory: 64Mi
+        limits:
+          cpu: 200m
+          memory: 128Mi
+
+    - name: git
+      image: alpine/git:2.54.0
+      command: ["cat"]
+      tty: true
+      workingDir: /home/jenkins/agent
+      resources:
+        requests:
+          cpu: 50m
+          memory: 64Mi
+        limits:
+          cpu: 200m
+          memory: 256Mi
+'''
+        }
+    }
+
+    options {
+        timestamps()
+        timeout(time: 30, unit: 'MINUTES')
+        buildDiscarder(logRotator(numToKeepStr: '20'))
+        // Два паралельні запуски пушили б у ту саму гілку й другий отримав би
+        // відмову non-fast-forward.
+        disableConcurrentBuilds()
+    }
+
+    environment {
+        // Номер збірки як тег образу: монотонний, унікальний і одразу видно,
+        // яка саме збірка зараз у кластері. Саме зміна цього рядка у values.yaml
+        // і є сигналом для Argo CD, що треба синхронізуватись.
+        IMAGE_TAG = "${env.BUILD_NUMBER}"
+    }
+
+    stages {
+
+        stage('Checkout') {
+            steps {
+                // cpsScm тягне лише сам Jenkinsfile (lightweight checkout),
+                // тому повний клон робимо тут — далі з ним працюють yq і git.
+                checkout scm
+
+                sh 'git --no-pager log -1 --oneline'
+            }
+        }
+
+        stage('Build & push to ECR') {
+            steps {
+                container('kaniko') {
+                    sh '''
+                        set -eu
+
+                        # credHelpers, а не credsStore: помічник ecr-login має
+                        # відповідати лише за реєстр AWS. Глобальний credsStore
+                        # зламав би завантаження базового образу python:3.9-slim
+                        # з Docker Hub — Kaniko пішов би в ECR і за ним.
+                        mkdir -p /kaniko/.docker
+                        cat > /kaniko/.docker/config.json <<EOF
+{ "credHelpers": { "${ECR_REPOSITORY%%/*}": "ecr-login" } }
+EOF
+
+                        echo "Збираю ${ECR_REPOSITORY}:${IMAGE_TAG}"
+
+                        # Два теги за один прохід: рухомий latest зручний для
+                        # ручних перевірок, незмінний ${IMAGE_TAG} — те, на що
+                        # реально посилається чарт.
+                        /kaniko/executor \
+                          --context   "${WORKSPACE}/${DOCKER_CONTEXT_PATH}" \
+                          --dockerfile "${WORKSPACE}/${DOCKER_CONTEXT_PATH}/Dockerfile" \
+                          --destination "${ECR_REPOSITORY}:${IMAGE_TAG}" \
+                          --destination "${ECR_REPOSITORY}:latest" \
+                          --verbosity info
+                    '''
+                }
+            }
+        }
+
+        stage('Update Helm chart') {
+            steps {
+                container('yq') {
+                    sh '''
+                        set -eu
+                        VALUES="${WORKSPACE}/${CHART_VALUES_PATH}"
+
+                        # Правка через sed, а не `yq -i`: yq перезбирає документ
+                        # з нуля й вирізає всі порожні рядки, тобто кожна збірка
+                        # переформатовувала б увесь values.yaml. Діапазон
+                        # /^image:/,/^[^ #]/ звужує заміну до блоку `image:` —
+                        # від нього до наступного ключа верхнього рівня.
+                        sed -i \
+                          -e "/^image:/,/^[^[:space:]#]/ s|^\\([[:space:]]*repository:\\).*|\\1 ${ECR_REPOSITORY}|" \
+                          -e "/^image:/,/^[^[:space:]#]/ s|^\\([[:space:]]*tag:\\).*|\\1 \\"${IMAGE_TAG}\\"|" \
+                          "${VALUES}"
+
+                        # А от читаємо вже yq — він розбирає YAML структурно,
+                        # тож підтверджує не «рядок схожий на потрібний», а що
+                        # ключі image.repository і image.tag справді мають нові
+                        # значення. Без цієї перевірки невдала заміна дала б
+                        # зелену збірку без деплою.
+                        WRITTEN_REPO=$(yq -r ".image.repository" "${VALUES}")
+                        WRITTEN_TAG=$(yq -r ".image.tag" "${VALUES}")
+
+                        if [ "${WRITTEN_REPO}" != "${ECR_REPOSITORY}" ] || [ "${WRITTEN_TAG}" != "${IMAGE_TAG}" ]; then
+                          echo "У ${CHART_VALUES_PATH} записано ${WRITTEN_REPO}:${WRITTEN_TAG}," >&2
+                          echo "а очікувалось ${ECR_REPOSITORY}:${IMAGE_TAG}" >&2
+                          exit 1
+                        fi
+
+                        echo "image.tag оновлено на ${IMAGE_TAG}"
+                    '''
+                }
+            }
+        }
+
+        stage('Push to Git') {
+            steps {
+                container('git') {
+                    withCredentials([usernamePassword(
+                        credentialsId: 'github-credentials',
+                        usernameVariable: 'GIT_USER',
+                        passwordVariable: 'GIT_TOKEN'
+                    )]) {
+                        sh '''
+                            set -eu
+
+                            # Контейнер git працює від root, а робочу директорію
+                            # створив jnlp від uid 1000. Без цього рядка git
+                            # відмовляється працювати: "detected dubious ownership".
+                            git config --global --add safe.directory "${WORKSPACE}"
+
+                            git config user.email "jenkins@ci.local"
+                            git config user.name  "Jenkins CI"
+
+                            git add "${CHART_VALUES_PATH}"
+
+                            if git diff --cached --quiet; then
+                              echo "values.yaml не змінився — коміт не потрібен"
+                              exit 0
+                            fi
+
+                            git commit -m "ci: update image.tag to ${IMAGE_TAG} [skip ci]"
+
+                            # Токен підставляється в URL прямо перед push, не
+                            # осідає в .git/config і маскується Jenkins у логу.
+                            # Схему відрізаємо розширенням шелу, а не sed:
+                            # у sed символ & в токені означав би «весь збіг».
+                            REPO_HOST_PATH="${GIT_REPO_URL#https://}"
+
+                            git push \
+                              "https://${GIT_USER}:${GIT_TOKEN}@${REPO_HOST_PATH}" \
+                              "HEAD:${GIT_TARGET_BRANCH}"
+
+                            echo "Запушено у гілку ${GIT_TARGET_BRANCH}"
+                        '''
+                    }
+                }
+            }
+        }
+    }
+
+    post {
+        success {
+            echo """
+            Готово. Образ ${env.ECR_REPOSITORY}:${env.IMAGE_TAG} у ECR,
+            image.tag у ${env.CHART_VALUES_PATH} оновлено й запушено
+            в гілку ${env.GIT_TARGET_BRANCH}.
+
+            Далі працює Argo CD: він опитує Git раз на 3 хвилини.
+            Щоб не чекати — Refresh у вебінтерфейсі або
+            `argocd app sync django-app`.
+            """.stripIndent()
+        }
+        failure {
+            echo 'Збірка впала. Найчастіші причини — у README.md, розділ «Типові помилки».'
+        }
+    }
+}

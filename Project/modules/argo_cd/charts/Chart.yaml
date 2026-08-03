@@ -1,0 +1,12 @@
+apiVersion: v2
+name: argocd-apps
+description: Application і Repository для Argo CD (app-of-apps, фінальний проєкт GoIT CI/CD)
+type: application
+
+version: 0.1.0
+appVersion: "1.0.0"
+
+keywords:
+  - argocd
+  - gitops
+  - goit

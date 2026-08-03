@@ -1,0 +1,17 @@
+{{/*
+Несекретні змінні середовища, перенесені з docker-compose теми 4.
+Підключаються до контейнера цілком, через `envFrom.configMapRef`.
+*/}}
+{{- $postgresHost := .Values.config.POSTGRES_HOST | default (include "django-app.postgresName" .) -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "django-app.configMapName" . }}
+  labels:
+    {{- include "django-app.labels" . | nindent 4 }}
+data:
+  {{- range $key, $value := omit .Values.config "POSTGRES_HOST" }}
+  {{ $key }}: {{ $value | quote }}
+  {{- end }}
+  # Порожній POSTGRES_HOST у values.yaml → сервіс вбудованого PostgreSQL.
+  POSTGRES_HOST: {{ $postgresHost | quote }}

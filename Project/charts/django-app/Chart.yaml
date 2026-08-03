@@ -1,0 +1,15 @@
+apiVersion: v2
+name: django-app
+description: Helm-чарт для Django-застосунку в EKS (фінальний проєкт, GoIT CI/CD)
+type: application
+
+# Версія самого чарта.
+version: 0.1.0
+
+# Версія застосунку, який чарт розгортає.
+appVersion: "1.0.0"
+
+keywords:
+  - django
+  - eks
+  - goit

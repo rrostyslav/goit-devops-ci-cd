@@ -1,0 +1,59 @@
+# Скопіюйте у terraform.tfvars і підставте свої значення:
+#
+#   cp terraform.tfvars.example terraform.tfvars
+#
+# terraform.tfvars ігнорується .gitignore і в репозиторій не потрапляє.
+# Альтернатива, якщо не хочете тримати токен у файлі взагалі:
+#
+#   export TF_VAR_github_token='github_pat_...'
+
+github_username = "rrostyslav"
+
+# Fine-grained PAT: https://github.com/settings/personal-access-tokens/new
+#   Repository access  → Only select repositories → goit-devops-ci-cd
+#   Permissions        → Repository permissions → Contents: Read and write
+github_token = "github_pat_XXXXXXXXXXXXXXXXXXXXXXXX"
+
+# Паролі до вебінтерфейсів. Логін в обох випадках — admin, мінімум 8 символів.
+jenkins_admin_password = "ChangeMe123!"
+grafana_admin_password = "ChangeMe123!"
+
+# Публічний репозиторій Argo CD клонує анонімно — секрет доступу для нього
+# не створюється. Поставте false, якщо зробите репозиторій приватним.
+git_repo_is_public = true
+
+# false — без зовнішніх балансувальників для Jenkins і Argo CD: доступ через
+# `kubectl port-forward`, саме як перевіряє умова завдання. Два ELB менше.
+# true — обидва отримують по зовнішньому URL одразу після apply.
+# На Grafana й Prometheus не впливає: у них завжди ClusterIP.
+expose_ui_via_load_balancer = false
+
+# =============================================================================
+# База даних
+# =============================================================================
+# Головний перемикач модуля rds. use_aurora і db_engine мають бути узгоджені:
+# рушій для Aurora починається з "aurora-". Неузгодженість модуль ловить ще
+# на plan і пояснює, що саме не так.
+#
+#   звичайна RDS:  use_aurora = false, db_engine = "postgres"
+#   Aurora:        use_aurora = true,  db_engine = "aurora-postgresql"
+#
+# MySQL модуль теж підтримує, але Django-застосунок цього проєкту ходить у базу
+# через psycopg2 — тому на рівні root-конфігурації дозволено лише PostgreSQL.
+
+use_aurora        = false
+db_engine         = "postgres"
+db_engine_version = "16.14"
+
+# null — модуль підбере дефолт під обрану гілку: db.t3.micro для звичайної RDS,
+# db.t4g.medium для Aurora (менших класів Aurora не пропонує взагалі).
+db_instance_class = null
+
+# true подвоює вартість обчислень: для звичайної RDS з'являється synchronous
+# standby, для Aurora — другий інстанс у сусідній зоні.
+db_multi_az = false
+
+# Пароль майстер-користувача. Лишіть закоментованим — і Terraform згенерує його
+# сам, поклавши той самий рядок у Kubernetes Secret django-app-db, з якого його
+# читає застосунок. Показати згенерований: `terraform output -raw rds_password`.
+# db_password = "ChangeMe123!"

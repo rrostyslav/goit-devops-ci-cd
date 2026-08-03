@@ -1,0 +1,27 @@
+Реліз "{{ .Release.Name }}" встановлено в неймспейс "{{ .Release.Namespace }}".
+
+Образ: {{ .Values.image.repository }}:{{ .Values.image.tag }}
+
+1. Дочекайтесь, поки балансувальник отримає зовнішню адресу (1–3 хвилини):
+
+     kubectl get svc -n {{ .Release.Namespace }} {{ include "django-app.fullname" . }} -w
+
+2. Відкрийте застосунок:
+
+     export APP_HOST=$(kubectl get svc -n {{ .Release.Namespace }} {{ include "django-app.fullname" . }} \
+       -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+     curl http://$APP_HOST/
+
+   Відповідь містить значення змінних з ConfigMap, ознаку наявності Secret
+   і поле "database": у робочому стані там "ok" — застосунок справді
+   підключився до {{ if .Values.postgres.enabled }}вбудованого PostgreSQL{{ else }}бази за адресою {{ .Values.config.POSTGRES_HOST | default "(не задано)" }}{{ end }}.
+
+{{- if .Values.autoscaling.enabled }}
+
+3. Перевірте автоскейлер (у колонці TARGETS має бути реальний відсоток,
+   а не <unknown>):
+
+     kubectl get hpa -n {{ .Release.Namespace }} {{ include "django-app.fullname" . }}
+
+   Масштабування: {{ .Values.autoscaling.minReplicas }}–{{ .Values.autoscaling.maxReplicas }} подів при CPU > {{ .Values.autoscaling.targetCPUUtilizationPercentage }}%.
+{{- end }}

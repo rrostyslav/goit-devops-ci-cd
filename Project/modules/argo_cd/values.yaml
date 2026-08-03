@@ -1,0 +1,72 @@
+# =============================================================================
+# Values для чарта argo/argo-cd
+# =============================================================================
+# Файл статичний: усе, що залежить від Terraform (тип Service, репозиторій,
+# гілка), передається окремо — через `set` та вкладений чарт у ./charts.
+
+# TLS argocd-server навмисно лишається увімкненим (`server.insecure` не
+# вимикаємо). Умова завдання перевіряє доступ саме так:
+#
+#   kubectl port-forward svc/argocd-server 8081:443 -n argocd
+#
+# — тобто через порт 443, за яким має відповідати HTTPS. З `server.insecure:
+# true` на 8080 висів би звичайний HTTP, і ця команда дала б обірване
+# з'єднання замість вебінтерфейсу. Ціна рішення — попередження браузера про
+# самопідписаний сертифікат при першому вході; для Argo CD без власного домену
+# це нормальний і очікуваний стан.
+
+server:
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+# Контролер робить основну роботу: тягне Git, рендерить чарт і порівнює
+# з кластером. Йому потрібно найбільше пам'яті з усіх компонентів.
+controller:
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+
+repoServer:
+  resources:
+    requests:
+      cpu: 100m
+      memory: 192Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+redis:
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+
+applicationSet:
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+
+# SSO і сповіщення в цій роботі не використовуються, а кожні зайві 100 МБ
+# мають значення: у кластері вже живуть Jenkins, Prometheus, Grafana
+# і сам застосунок.
+dex:
+  enabled: false
+
+notifications:
+  enabled: false

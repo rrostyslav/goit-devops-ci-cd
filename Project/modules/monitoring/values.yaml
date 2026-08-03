@@ -1,0 +1,162 @@
+# =============================================================================
+# Values для чарта prometheus-community/kube-prometheus-stack
+# =============================================================================
+# Файл статичний: усе, що знає лише Terraform (пароль Grafana, тип Service),
+# передається окремо через `set` у monitoring.tf.
+
+# =============================================================================
+# Grafana
+# =============================================================================
+grafana:
+  enabled: true
+
+  # Ім'я Service має бути рівно `grafana` — саме його називає умова завдання:
+  #   kubectl port-forward svc/grafana 3000:80 -n monitoring
+  # Без цього рядка підчарт назвав би сервіс `<реліз>-grafana`, і команда
+  # з умови не спрацювала б.
+  fullnameOverride: grafana
+
+  service:
+    # 80 ззовні → 3000 у контейнері. Той самий порт 80 у команді вище.
+    port: 80
+
+  # Дані Grafana — дашборди, датасорси, користувачі — приїжджають сюди
+  # декларативно (з ConfigMap'ів, які створює цей же чарт), тож переживати
+  # рестарт пода нема чому. Диск тут дав би лише EBS-том, який Helm при
+  # видаленні релізу НЕ прибирає: PVC від StatefulSet переживає uninstall
+  # і тихо тягне гроші вже після terraform destroy.
+  persistence:
+    enabled: false
+
+  # Готові дашборди по кластеру: вузли, неймспейси, поди, робочі навантаження.
+  # Саме в «Kubernetes / Compute Resources / Namespace (Pods)» видно django-app.
+  defaultDashboardsEnabled: true
+  defaultDashboardsTimezone: utc
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 192Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+  # Sidecar підхоплює дашборди й датасорси з будь-якого ConfigMap з міткою
+  # grafana_dashboard / grafana_datasource — так дашборд можна додати, не
+  # чіпаючи цей чарт узагалі.
+  sidecar:
+    dashboards:
+      enabled: true
+      label: grafana_dashboard
+      searchNamespace: ALL
+    datasources:
+      enabled: true
+      label: grafana_datasource
+
+# =============================================================================
+# Prometheus
+# =============================================================================
+prometheus:
+  enabled: true
+
+  prometheusSpec:
+    # Навчальний стенд живе години, не тижні. 6 годин історії вистачає, щоб
+    # побачити на графіках і сплеск від навантажувального тесту, і реакцію HPA.
+    retention: 6h
+
+    # Тут теж emptyDir, а не PVC — з тієї ж причини, що й у Grafana вище:
+    # том від StatefulSet лишається жити після видалення релізу.
+
+    # За замовчуванням Prometheus підбирає лише ті ServiceMonitor'и, що мають
+    # мітку цього релізу. `false` знімає це обмеження — і будь-який
+    # ServiceMonitor, доданий пізніше (наприклад, для Django-застосунку),
+    # підхоплюється без правки цього чарта.
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+    ruleSelectorNilUsesHelmValues: false
+
+    resources:
+      requests:
+        cpu: 200m
+        memory: 512Mi
+      limits:
+        cpu: 1000m
+        memory: 1500Mi
+
+# =============================================================================
+# Alertmanager
+# =============================================================================
+alertmanager:
+  enabled: true
+
+  alertmanagerSpec:
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        cpu: 200m
+        memory: 256Mi
+
+# =============================================================================
+# Компоненти control plane, яких у EKS не існує зовні
+# =============================================================================
+# Керовану панель EKS тримає AWS, і її внутрішні компоненти не мають доступних
+# ззовні метрик. Якщо лишити ці чотири блоки увімкненими, у Prometheus назавжди
+# зависають чотири таргети зі статусом DOWN, а Alertmanager стабільно рапортує
+# про «зламаний» кластер. Це не поломка стенду — це просто не наші компоненти.
+#
+# kube-proxy окремий випадок: у EKS він слухає метрики на 127.0.0.1, тож
+# зібрати їх ззовні пода неможливо навіть теоретично.
+kubeControllerManager:
+  enabled: false
+kubeScheduler:
+  enabled: false
+kubeEtcd:
+  enabled: false
+kubeProxy:
+  enabled: false
+
+# Разом із компонентами вимикаємо й правила тривог, що на них посилаються —
+# інакше Alertmanager світився б червоним через метрики, яких не існує.
+defaultRules:
+  create: true
+  rules:
+    etcd: false
+    kubeControllerManager: false
+    kubeProxy: false
+    kubeSchedulerAlerting: false
+    kubeSchedulerRecording: false
+
+# =============================================================================
+# Експортери метрик
+# =============================================================================
+# node-exporter — DaemonSet, по поду на кожну ноду: CPU, пам'ять, диск, мережа.
+# kube-state-metrics — стан об'єктів Kubernetes: скільки подів у Running,
+# скільки реплік просить Deployment, що зараз показує HPA.
+prometheus-node-exporter:
+  resources:
+    requests:
+      cpu: 20m
+      memory: 32Mi
+    limits:
+      cpu: 100m
+      memory: 128Mi
+
+kube-state-metrics:
+  resources:
+    requests:
+      cpu: 20m
+      memory: 64Mi
+    limits:
+      cpu: 100m
+      memory: 192Mi
+
+prometheusOperator:
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
