@@ -50,7 +50,15 @@ variable "cluster_addons" {
 }
 
 variable "node_instance_types" {
-  description = "Типи інстансів для воркер-нод (не менше t3.small)"
+  description = <<-EOT
+    Типи інстансів для воркер-нод (не менше t3.small).
+
+    На акаунтах з Free-планом AWS дозволені лише free-tier-eligible типи.
+    Якщо вказати інший, EKS не поверне помилки — node group просто вічно
+    висітиме в стані CREATING, не створивши навіть Auto Scaling Group.
+    Перевірити список: aws ec2 describe-instance-types
+    --filters Name=free-tier-eligible,Values=true
+  EOT
   type        = list(string)
   default     = ["t3.small"]
 }

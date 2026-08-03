@@ -128,10 +128,19 @@ module "eks" {
   public_subnet_ids  = module.vpc.public_subnet_ids
   private_subnet_ids = module.vpc.private_subnet_ids
 
-  # t3.medium замість t3.small із ДЗ7: у кластері тепер живуть ще й Jenkins
+  # Більша нода, ніж t3.small із ДЗ7: у кластері тепер живуть ще й Jenkins
   # (~1 ГБ) та компоненти Argo CD (~1 ГБ разом). На 2 ГБ ноди для них просто
   # не лишилось би місця, і поди зависли б у Pending.
-  node_instance_types = ["t3.medium"]
+  #
+  # Але тип обраний не довільно. Акаунт на Free-плані AWS дозволяє запускати
+  # ЛИШЕ free-tier-eligible типи, і t3.medium серед них немає — EKS від цього
+  # мовчки зависає (див. README, розділ «Типові помилки»). Актуальний список:
+  #   aws ec2 describe-instance-types --region us-west-2 \
+  #     --filters Name=free-tier-eligible,Values=true --query 'InstanceTypes[].InstanceType'
+  #
+  # m7i-flex.large: 2 vCPU, 8 ГБ, до 29 подів на ноду, x86_64, ~$0.096/год.
+  # Дешевша альтернатива з тим самим лімітом подів — c7i-flex.large (4 ГБ).
+  node_instance_types = ["m7i-flex.large"]
   node_desired_size   = 2
   node_min_size       = 2
   node_max_size       = 4

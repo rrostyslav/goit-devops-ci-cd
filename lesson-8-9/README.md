@@ -113,15 +113,28 @@ lesson-8-9/
 | `s3-backend` | S3-бакет + DynamoDB-таблиця для стейту. **Вимкнений**: бекенд створено ще в ДЗ5 і він живий |
 | `vpc` | VPC `10.0.0.0/16`, 3 публічні + 3 приватні підмережі, IGW, NAT, теги для EKS |
 | `ecr` | Репозиторій `django-app` зі скануванням при push і lifecycle-політикою на 10 образів |
-| `eks` | Кластер `lesson-8-9-eks`, node group `t3.medium` (2–4 ноди), add-ons, OIDC-провайдер, EBS CSI-драйвер |
+| `eks` | Кластер `lesson-8-9-eks`, node group `m7i-flex.large` (2–4 ноди), add-ons, OIDC-провайдер, EBS CSI-драйвер |
 | `jenkins` | Неймспейс, два секрети, IAM-роль агента (IRSA), Helm-реліз Jenkins із JCasC і готовою джобою |
 | `argo_cd` | Неймспейс, Helm-реліз Argo CD, Application `django-app` з auto-sync і секрет доступу до репозиторію |
 
 ### Що змінилось відносно ДЗ7
 
-**Ноди `t3.medium` замість `t3.small`.** У кластері тепер живуть Jenkins
+**Ноди `m7i-flex.large` замість `t3.small`.** У кластері тепер живуть Jenkins
 (~1 ГБ) і компоненти Argo CD (~1 ГБ разом) на додачу до застосунку та бази.
 На 2 ГБ ноди для них просто не лишилось би місця.
+
+Тип обраний не довільно: на акаунті з Free-планом AWS дозволені **лише
+free-tier-eligible типи інстансів**, і `t3.medium` серед них немає. Перевірити
+актуальний список для свого акаунта:
+
+```bash
+aws ec2 describe-instance-types --region us-west-2 \
+  --filters Name=free-tier-eligible,Values=true \
+  --query 'InstanceTypes[].[InstanceType,VCpuInfo.DefaultVCpus,MemoryInfo.SizeInMiB]' --output text
+```
+
+`m7i-flex.large` — 2 vCPU, 8 ГБ, до 29 подів на ноду. Дешевша альтернатива
+з тим самим лімітом подів — `c7i-flex.large` (4 ГБ).
 
 **OIDC-провайдер кластера (`modules/eks/oidc.tf`).** EKS видає подам JWT-токени,
 але AWS їм не довіряє, доки issuer кластера не зареєстровано в IAM. Саме ця
@@ -413,6 +426,55 @@ kubectl run load-gen-1 -n django-app --rm -it --image=busybox:1.36 --restart=Nev
 
 ## Типові помилки
 
+**`terraform apply` десятками хвилин висить на `aws_eks_node_group.main:
+Still creating...`, і нічого не відбувається.**
+
+Найпідступніша з усіх, бо AWS не повідомляє про помилку **взагалі**:
+
+```bash
+aws eks describe-nodegroup --cluster-name lesson-8-9-eks \
+  --nodegroup-name lesson-8-9-eks-ng --region us-west-2 \
+  --query 'nodegroup.{status:status,health:health.issues,asg:resources.autoScalingGroups}'
+# status: CREATING, health.issues: [], asg: null — і так хоч годину
+```
+
+Ознака: **немає жодного EC2-інстансу і навіть Auto Scaling Group**. Якщо
+інстанси є, але не приєднуються до кластера — це інша проблема (мережа або
+IAM), і вона проявляється як `NodeCreationFailure` у `health.issues`.
+
+Причина — акаунт на Free-плані AWS, а тип інстансу не входить у
+free-tier-eligible. Перевірити напряму:
+
+```bash
+aws ec2 run-instances --region us-west-2 --instance-type m7i-flex.large \
+  --image-id $(aws ssm get-parameter --region us-west-2 --query Parameter.Value --output text \
+    --name /aws/service/eks/optimized-ami/1.36/amazon-linux-2023/x86_64/standard/recommended/image_id) \
+  --subnet-id <будь-яка приватна підмережа>
+```
+
+Помилка виглядає так:
+
+```text
+InvalidParameterCombination: The specified instance type is not eligible
+for Free Tier. For a list of Free Tier instance types, run
+'describe-instance-types' with the filter 'free-tier-eligible=true'.
+```
+
+> **`--dry-run` тут не працює.** Він перевіряє права й параметри, але не
+> зачіпає обмеження Free-плану й бадьоро відповідає «Request would have
+> succeeded» на тип, який насправді не запуститься. Перевіряйте справжнім
+> запуском і одразу гасіть інстанс через `terminate-instances`.
+
+Лікування — підставити дозволений тип у `node_instance_types` (`main.tf`),
+знести зависну групу й дати Terraform створити її заново:
+
+```bash
+terraform destroy -target=module.eks.aws_eks_node_group.main
+terraform apply
+```
+
+Кластер, VPC і NAT при цьому не чіпаються — перестворюється лише node group.
+
 **Под Jenkins висить у `Pending`, PVC теж `Pending`.**
 Немає EBS CSI-драйвера. Перевірте: `kubectl get pods -n kube-system | grep ebs-csi`
 і `kubectl describe pvc jenkins -n jenkins`.
@@ -495,11 +557,11 @@ S3-бакет зі стейтом, DynamoDB-таблицю і ECR можна л�
 | Ресурс | ~$/год |
 |---|---|
 | EKS control plane | 0.10 |
-| 2 × `t3.medium` | 0.083 |
+| 2 × `m7i-flex.large` | 0.192 |
 | NAT Gateway + Elastic IP | 0.049 |
 | 3 × Network Load Balancer (застосунок, Jenkins, Argo CD) | 0.068 |
-| **Разом** | **≈ 0.30** |
+| **Разом** | **≈ 0.41** |
 
-Приблизно **$7 на добу**, якщо забути погасити. Поставте
+Приблизно **$10 на добу**, якщо забути погасити. Поставте
 `expose_ui_via_load_balancer = false` і ходіть через `kubectl port-forward` —
 це прибирає два з трьох балансувальників.
