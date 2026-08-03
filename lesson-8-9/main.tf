@@ -178,10 +178,11 @@ module "argo_cd" {
   git_branch   = local.git_branch
   chart_path   = local.chart_path
 
-  # Той самий PAT, що й у Jenkins. Для публічного репозиторію ці два рядки
-  # можна прибрати — Argo CD клонуватиме анонімно.
-  git_username = var.github_username
-  git_password = var.github_token
+  # Публічний репозиторій Argo CD читає анонімно, тож токен йому не потрібен —
+  # і секрет із ним у кластері не з'являється взагалі. Для приватного репо
+  # поставте git_repo_is_public = false, і сюди поїде той самий PAT, що в Jenkins.
+  git_username = var.git_repo_is_public ? "" : var.github_username
+  git_password = var.git_repo_is_public ? "" : var.github_token
 
   application_name      = "django-app"
   destination_namespace = "django-app"

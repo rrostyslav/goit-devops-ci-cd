@@ -178,22 +178,31 @@ Dockerfile і чарта) виводиться звідти автоматичн
 
 ```bash
 terraform init
-```
-
-Далі — **два apply підряд**. Причина: провайдери `kubernetes` і `helm`
-налаштовуються на endpoint кластера, а на порожньому акаунті цього endpoint
-ще не існує, і Terraform не може спланувати ресурси в кластері, якого немає.
-
-```bash
-# 1) Спершу тільки інфраструктура AWS — 15–20 хвилин
-terraform apply -target=module.vpc -target=module.ecr -target=module.eks
-
-# 2) Тепер кластер існує — ставимо в нього Jenkins і Argo CD (5–8 хвилин)
+terraform plan     # 47 ресурсів до створення
 terraform apply
 ```
 
-> Попередження Terraform про `-target` — очікуване. Другий `apply` без
-> `-target` приводить стейт до повного вигляду.
+Одного `apply` достатньо. Провайдери `kubernetes` і `helm` налаштовуються на
+endpoint кластера, якого на порожньому акаунті ще немає, але Terraform
+відкладає їх конфігурацію до моменту, коли справа дійде до ресурсів у
+кластері, — а на той час EKS уже піднято. Разом це 20–25 хвилин, з яких
+15–20 — створення кластера й node group.
+
+<details>
+<summary>Якщо apply усе ж спіткнувся на конфігурації провайдера</summary>
+
+На старіших версіях Terraform (до 1.9) невідомий endpoint у конфігурації
+провайдера міг зупинити план. Тоді розбийте apply на два кроки:
+
+```bash
+terraform apply -target=module.vpc -target=module.ecr -target=module.eks
+terraform apply
+```
+
+Попередження про `-target` очікуване; другий `apply` без `-target` приводить
+стейт до повного вигляду.
+
+</details>
 
 <details>
 <summary>Якщо бекенду для стейту ще не існує (розгортання з нуля)</summary>

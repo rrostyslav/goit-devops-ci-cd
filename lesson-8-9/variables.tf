@@ -29,6 +29,18 @@ variable "jenkins_admin_password" {
   }
 }
 
+variable "git_repo_is_public" {
+  description = <<-EOT
+    true  — Argo CD клонує репозиторій анонімно, секрет доступу не створюється.
+    false — Argo CD отримує ті самі github_username і github_token, що й Jenkins.
+
+    Jenkins потребує токен у будь-якому разі: анонімно можна лише читати,
+    а він ще й пушить коміт із новим тегом.
+  EOT
+  type        = bool
+  default     = true
+}
+
 variable "expose_ui_via_load_balancer" {
   description = <<-EOT
     true  — Jenkins і Argo CD отримують по зовнішньому Service типу LoadBalancer
