@@ -1,0 +1,29 @@
+# Значення цього чарта повністю формує Terraform (modules/argo_cd/argo_cd.tf),
+# тому тут — лише дефолти й документація структури.
+
+# Неймспейс, у якому працює Argo CD. Application і Repository мають лежати
+# саме в ньому — інакше контролер їх не побачить.
+argocdNamespace: argocd
+
+# Репозиторії, до яких Argo CD отримує доступ. Для публічного репозиторію
+# список лишається порожнім: креденшели не потрібні.
+#
+# repositories:
+#   - name: django-app
+#     url: https://github.com/user/repo.git
+#     username: user
+#     password: ghp_...
+repositories: []
+
+# Застосунки, за якими стежить Argo CD.
+#
+# applications:
+#   - name: django-app                     # ім'я Application
+#     repoURL: https://github.com/...       # звідки брати чарт
+#     targetRevision: lesson-10            # гілка або тег
+#     path: lesson-10/charts/django-app    # шлях до чарта в репозиторії
+#     destinationNamespace: django-app      # куди розгортати
+#     project: default                      # опційно
+#     destinationServer: https://kubernetes.default.svc  # опційно
+#     ignoreDifferences: []                 # опційно, додається до дефолтних
+applications: []

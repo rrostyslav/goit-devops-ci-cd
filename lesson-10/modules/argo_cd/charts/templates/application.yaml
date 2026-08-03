@@ -1,0 +1,67 @@
+{{/*
+Argo CD Application — декларативний опис «що, звідки й куди розгортати».
+Контролер тримає кластер у стані, описаному Helm-чартом у Git: щойно Jenkins
+пушить новий image.tag, різниця стає видимою, і auto-sync її застосовує.
+*/}}
+{{- range .Values.applications }}
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: {{ .name }}
+  namespace: {{ $.Values.argocdNamespace }}
+  finalizers:
+    # Видалення Application тягне за собою видалення всього, що воно створило.
+    # Без цього після знищення Argo CD у кластері лишається Service типу
+    # LoadBalancer, а разом з ним — живий ELB, який блокує destroy VPC.
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: {{ .project | default "default" }}
+
+  source:
+    repoURL: {{ .repoURL }}
+    targetRevision: {{ .targetRevision }}
+    path: {{ .path }}
+    {{- with .helm }}
+    helm:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+
+  destination:
+    server: {{ .destinationServer | default "https://kubernetes.default.svc" }}
+    namespace: {{ .destinationNamespace }}
+
+  syncPolicy:
+    automated:
+      # Видаляти з кластера те, що зникло з Git.
+      prune: true
+      # Повертати назад ручні зміни, зроблені повз Git (kubectl edit).
+      selfHeal: true
+      # Не синхронізувати, якщо чарт зрендерився в порожнечу — захист від
+      # випадкового зносу застосунку зламаним комітом.
+      allowEmpty: false
+    syncOptions:
+      # Неймспейс призначення створює сам Argo CD.
+      - CreateNamespace=true
+      - PruneLast=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 3m
+
+  ignoreDifferences:
+    # Кількістю реплік керує HPA, а не Git. Без цього винятку selfHeal
+    # відкочував би кожне масштабування назад до minReplicas — автоскейлер
+    # і Argo CD воювали б між собою на кожній ітерації.
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /spec/replicas
+    {{- with .ignoreDifferences }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+
+  revisionHistoryLimit: 5
+{{- end }}
