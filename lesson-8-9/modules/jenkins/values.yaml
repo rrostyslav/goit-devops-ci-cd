@@ -1,0 +1,155 @@
+# =============================================================================
+# Values для чарта jenkins/jenkins
+# =============================================================================
+# Файл рендериться через templatefile() у jenkins.tf. Одинарний долар із
+# фігурними дужками — це змінна Terraform, вона підставляється тут-таки.
+# Подвоєний долар — екранування: у підсумковий YAML потрапляє звичайний
+# долар із дужками, і його вже читає плагін configuration-as-code із
+# секретів, змонтованих у /run/secrets/additional.
+
+controller:
+  # LoadBalancer дає зовнішній URL одразу після apply. Для роботи без
+  # публічного балансувальника поставте service_type = "ClusterIP" і ходьте
+  # через `kubectl port-forward`.
+  serviceType: ${service_type}
+  servicePort: 8080
+
+  resources:
+    requests:
+      cpu: 300m
+      memory: 1Gi
+    limits:
+      cpu: 1500m
+      memory: 2Gi
+
+  javaOpts: "-Xms512m -Xmx1024m"
+
+  # Логін і пароль беруться з готового Kubernetes Secret, а не генеруються
+  # чартом — інакше пароль жив би лише всередині кластера й не був би
+  # відтворюваним між apply.
+  admin:
+    createSecret: true
+    existingSecret: ${admin_secret_name}
+
+  # Секрет із GitHub PAT. Чарт монтує всі його ключі як файли, і JCasC
+  # звертається до них за іменем ключа: $${github-username}, $${github-token}.
+  existingSecret: ${github_secret_name}
+
+  # До чотирьох плагінів, які чарт ставить за замовчуванням (kubernetes,
+  # workflow-aggregator, git, configuration-as-code), додаємо:
+  #   job-dsl             — JCasC створює pipeline-джобу декларативно;
+  #   credentials-binding — withCredentials у Jenkinsfile;
+  #   timestamper         — опція timestamps() у Jenkinsfile; без плагіна
+  #                         пайплайн падає ще на розборі, з «Invalid option type»;
+  #   pipeline-stage-view — візуалізація стадій, щоб було що показати на скріні.
+  # Версії не пінимо навмисно: чарт підтягне сумісні з поточним Jenkins.
+  additionalPlugins:
+    - job-dsl
+    - credentials-binding
+    - timestamper
+    - pipeline-stage-view
+
+  JCasC:
+    defaultConfig: true
+
+    configScripts:
+      welcome-message: |
+        jenkins:
+          systemMessage: |
+            GoIT CI/CD, ДЗ8-9. Пайплайн django-app-ci: Kaniko збирає образ,
+            пушить у ECR, оновлює image.tag у Helm-чарті й пушить у Git.
+            Далі підхоплює Argo CD.
+
+      # Усе, що знає Terraform і має знати пайплайн, приїжджає сюди —
+      # тоді в Jenkinsfile немає жодного захардкодженого URL чи регіону.
+      global-environment: |
+        jenkins:
+          globalNodeProperties:
+            - envVars:
+                env:
+                  - key: "ECR_REPOSITORY"
+                    value: "${ecr_repository_url}"
+                  - key: "AWS_DEFAULT_REGION"
+                    value: "${aws_region}"
+                  - key: "DOCKER_CONTEXT_PATH"
+                    value: "${docker_context_path}"
+                  - key: "CHART_VALUES_PATH"
+                    value: "${chart_values_path}"
+                  - key: "GIT_TARGET_BRANCH"
+                    value: "${git_branch}"
+                  - key: "GIT_REPO_URL"
+                    value: "${git_repo_url}"
+                  - key: "AGENT_SERVICE_ACCOUNT"
+                    value: "${agent_service_account}"
+
+      # Той самий PAT використовується і для clone, і для push.
+      github-credentials: |
+        credentials:
+          system:
+            domainCredentials:
+              - credentials:
+                  - usernamePassword:
+                      scope: GLOBAL
+                      id: "github-credentials"
+                      username: "$${github-username}"
+                      password: "$${github-token}"
+                      description: "GitHub PAT — clone і push гілки ${git_branch}"
+
+      # Seed-джоба. Тригера навмисно немає: пайплайн сам комітить у ту саму
+      # гілку, тож будь-який SCM-тригер зациклив би його на власному коміті.
+      # Запуск — кнопкою «Build Now» або через webhook на конкретну подію.
+      seed-job: |
+        jobs:
+          - script: |
+              pipelineJob('${job_name}') {
+                description('Збірка Django-образу через Kaniko, push у ECR і оновлення image.tag у Helm-чарті')
+                definition {
+                  cpsScm {
+                    scm {
+                      git {
+                        remote {
+                          url('${git_repo_url}')
+                          credentials('github-credentials')
+                        }
+                        branch('*/${git_branch}')
+                        extensions { }
+                      }
+                    }
+                    scriptPath('${jenkinsfile_path}')
+                    lightweight(true)
+                  }
+                }
+              }
+
+# JENKINS_HOME на EBS-томі: без нього кожен рестарт пода стирає історію збірок
+# і змушує наново тягнути плагіни. Диск створює aws-ebs-csi-driver (модуль eks),
+# storageClass не вказуємо — беремо дефолтний gp2, який EKS створює сам.
+persistence:
+  enabled: true
+  size: ${persistence_size}
+  accessMode: ReadWriteOnce
+
+# ServiceAccount агентів. Анотація role-arn — це і є вмикач IRSA: вебхук EKS
+# побачить її й підкине подам AWS_ROLE_ARN та AWS_WEB_IDENTITY_TOKEN_FILE,
+# завдяки чому Kaniko зможе залогінитись у ECR без статичних ключів.
+serviceAccountAgent:
+  create: true
+  name: ${agent_service_account}
+  annotations:
+    eks.amazonaws.com/role-arn: ${agent_role_arn}
+
+agent:
+  enabled: true
+  # Дефолтний под-шаблон віддає свій ServiceAccount усім агентам,
+  # включно з тими, що описані yaml'ом у Jenkinsfile.
+  useDefaultServiceAccount: true
+
+  # Контейнер jnlp лише тримає зв'язок з контролером — робота йде в kaniko,
+  # yq і git. Дефолтні 512m CPU на ноді t3.medium забирали б чверть ядра ні за що.
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi

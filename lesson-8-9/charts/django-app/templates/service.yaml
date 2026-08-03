@@ -1,0 +1,24 @@
+{{/*
+Тип LoadBalancer: EKS створює зовнішній балансувальник у публічних підмережах
+(вони позначені тегом kubernetes.io/role/elb модулем vpc) і віддає його DNS-ім'я
+в колонці EXTERNAL-IP.
+*/}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "django-app.fullname" . }}
+  labels:
+    {{- include "django-app.labels" . | nindent 4 }}
+  {{- with .Values.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.service.type }}
+  ports:
+    - name: http
+      port: {{ .Values.service.port }}
+      targetPort: http
+      protocol: TCP
+  selector:
+    {{- include "django-app.selectorLabels" . | nindent 4 }}

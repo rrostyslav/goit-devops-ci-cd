@@ -1,0 +1,22 @@
+# Скопіюйте у terraform.tfvars і підставте свої значення:
+#
+#   cp terraform.tfvars.example terraform.tfvars
+#
+# terraform.tfvars ігнорується .gitignore і в репозиторій не потрапляє.
+# Альтернатива, якщо не хочете тримати токен у файлі взагалі:
+#
+#   export TF_VAR_github_token='github_pat_...'
+
+github_username = "rrostyslav"
+
+# Fine-grained PAT: https://github.com/settings/personal-access-tokens/new
+#   Repository access  → Only select repositories → goit-devops-ci-cd
+#   Permissions        → Repository permissions → Contents: Read and write
+github_token = "github_pat_XXXXXXXXXXXXXXXXXXXXXXXX"
+
+# Логін адміністратора Jenkins — admin, пароль ваш (мінімум 8 символів).
+jenkins_admin_password = "ChangeMe123!"
+
+# false — не створювати зовнішні балансувальники для Jenkins і Argo CD,
+# ходити через `kubectl port-forward`.
+expose_ui_via_load_balancer = true

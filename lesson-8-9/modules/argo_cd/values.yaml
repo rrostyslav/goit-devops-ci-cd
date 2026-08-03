@@ -1,0 +1,69 @@
+# =============================================================================
+# Values для чарта argo/argo-cd
+# =============================================================================
+# Файл статичний: усе, що залежить від Terraform (тип Service, репозиторій,
+# гілка), передається окремо — через `set` та вкладений чарт у ./charts.
+
+configs:
+  params:
+    # Без цього argocd-server піднімає власний TLS із самопідписаним
+    # сертифікатом і редіректить HTTP → HTTPS. За L4-балансувальником це дає
+    # або нескінченний редірект, або попередження браузера на кожен вхід.
+    # Термінувати TLS у навчальному стенді нема на чому, тож віддаємо HTTP.
+    server.insecure: true
+
+server:
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+# Контролер робить основну роботу: тягне Git, рендерить чарт і порівнює
+# з кластером. Йому потрібно найбільше пам'яті з усіх компонентів.
+controller:
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+
+repoServer:
+  resources:
+    requests:
+      cpu: 100m
+      memory: 192Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+redis:
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+
+applicationSet:
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+
+# SSO і сповіщення в цій роботі не використовуються, а на двох t3.medium
+# кожні зайві 100 МБ мають значення: у кластері вже живуть Jenkins,
+# застосунок і його база.
+dex:
+  enabled: false
+
+notifications:
+  enabled: false
