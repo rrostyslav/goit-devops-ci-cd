@@ -18,6 +18,11 @@
 > в умові завдання. Гілка згадується в коді один раз — у `local.git_branch`
 > (`main.tf`), і саме її читають Jenkins та Argo CD.
 
+**Фактичні виводи команд із розгорнутого стенду — у
+[`VERIFICATION.md`](VERIFICATION.md):** склад кластера, дві збірки Jenkins,
+коміт, який Argo CD підхопив із Git, відповідь застосунку з `"database": "ok"`,
+стан HPA, таргети Prometheus і дашборди Grafana.
+
 ## Як це працює разом
 
 ```mermaid
