@@ -10,6 +10,11 @@ RDS-інстанцію, і в обох випадках сам створює DB
 [`modules/rds/README.md`](modules/rds/README.md).** Тут — те, як він
 вбудований у проєкт.
 
+> **Папка `lesson-10/`, гілка `lesson-db-module`.** Назва гілки взята з умови
+> завдання, назва папки — з наскрізної нумерації тем курсу. Там, де в коді
+> трапляється `lesson-10`, це шлях або ім'я ресурсу; гілка згадується лише
+> в `local.git_branch` (`main.tf`), і саме її читає Argo CD.
+
 Решта інфраструктури дістається у спадок від ДЗ8-9 і працює як раніше:
 замкнений CI/CD-цикл, у якому **Jenkins** збирає образ через **Kaniko**,
 публікує його в **ECR** і комітить новий тег у Helm-чарт, а **Argo CD** бачить
@@ -50,17 +55,17 @@ db_engine  = "aurora-postgresql"
 
 ```mermaid
 flowchart TD
-    DEV["Розробник<br/>git push у lesson-10"] --> JOB
+    DEV["Розробник<br/>git push у lesson-db-module"] --> JOB
 
     subgraph CI["Jenkins — CI (неймспейс jenkins)"]
         JOB["Джоба django-app-ci<br/>створена через JCasC"] --> POD["Под-агент у Kubernetes<br/>kaniko + yq + git"]
         POD --> BUILD["1. Kaniko збирає образ<br/>з lesson-10/django-app/Dockerfile"]
         BUILD --> PUSH["2. Push у ECR<br/>django-app:BUILD_NUMBER + :latest"]
         PUSH --> EDIT["3. sed правит image.tag<br/>у charts/django-app/values.yaml"]
-        EDIT --> COMMIT["4. git commit + push<br/>у гілку lesson-10"]
+        EDIT --> COMMIT["4. git commit + push<br/>у гілку lesson-db-module"]
     end
 
-    COMMIT --> GIT[("GitHub<br/>goit-devops-ci-cd<br/>гілка lesson-10")]
+    COMMIT --> GIT[("GitHub<br/>goit-devops-ci-cd<br/>гілка lesson-db-module")]
 
     subgraph CD["Argo CD — CD (неймспейс argocd)"]
         GIT --> WATCH["Application django-app<br/>опитує Git раз на 3 хв"]
@@ -388,12 +393,12 @@ kubectl get pods -n jenkins -w
 eval "$(terraform output -raw ecr_list_images_command)"
 
 # коміт у GitHub
-git fetch origin lesson-10
-git log origin/lesson-10 --oneline -3
+git fetch origin lesson-db-module
+git log origin/lesson-db-module --oneline -3
 ```
 
 > Після кожної збірки ваша локальна гілка відстає на один коміт.
-> Перед своїм наступним push зробіть `git pull --rebase origin lesson-10`.
+> Перед своїм наступним push зробіть `git pull --rebase origin lesson-db-module`.
 
 ## Крок 5. Argo CD
 
@@ -538,12 +543,12 @@ External Secrets Operator, що читає той самий секрет із S
 ```bash
 # 1) міняємо щось у застосунку
 vim django-app/myproject/views.py
-git add . && git commit -m "Change greeting" && git push origin lesson-10
+git add . && git commit -m "Change greeting" && git push origin lesson-db-module
 
 # 2) Build Now у Jenkins → пайплайн збирає образ і комітить новий тег
 
 # 3) дивимось, як тег змінився в Git
-git pull --rebase origin lesson-10
+git pull --rebase origin lesson-db-module
 git show --stat HEAD
 grep -A2 '^image:' charts/django-app/values.yaml
 

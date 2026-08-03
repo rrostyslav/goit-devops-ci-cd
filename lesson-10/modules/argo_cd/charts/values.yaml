@@ -20,7 +20,7 @@ repositories: []
 # applications:
 #   - name: django-app                     # ім'я Application
 #     repoURL: https://github.com/...       # звідки брати чарт
-#     targetRevision: lesson-10            # гілка або тег
+#     targetRevision: lesson-db-module            # гілка або тег
 #     path: lesson-10/charts/django-app    # шлях до чарта в репозиторії
 #     destinationNamespace: django-app      # куди розгортати
 #     project: default                      # опційно

@@ -9,7 +9,7 @@
 //   DOCKER_CONTEXT_PATH — lesson-10/django-app
 //   CHART_VALUES_PATH   — lesson-10/charts/django-app/values.yaml
 //   GIT_REPO_URL        — https://github.com/rrostyslav/goit-devops-ci-cd.git
-//   GIT_TARGET_BRANCH   — lesson-10
+//   GIT_TARGET_BRANCH   — lesson-db-module
 //
 // Тому в цьому файлі немає жодного захардкодженого URL, регіону чи шляху:
 // перейменували папку в main.tf — пайплайн підхопив це сам.

@@ -54,7 +54,10 @@ locals {
   # HTTPS, а не SSH: Jenkins клонує репозиторій зсередини кластера, де немає
   # ні вашого ~/.ssh, ні ssh-агента. Локально ви й далі працюєте по SSH.
   git_repo_url = "https://github.com/rrostyslav/goit-devops-ci-cd.git"
-  git_branch   = "lesson-10"
+  # Гілка, а не папка: за умовою завдання робота здається з lesson-db-module,
+  # тоді як самі файли лежать у lesson-10/ (див. lesson_dir вище). Jenkins
+  # пушить сюди оновлений тег, Argo CD звідси ж його читає.
+  git_branch = "lesson-db-module"
 
   jenkinsfile_path    = "${local.lesson_dir}/Jenkinsfile"
   chart_path          = "${local.lesson_dir}/charts/django-app"
