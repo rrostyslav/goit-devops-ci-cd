@@ -182,15 +182,20 @@ aws ecr get-login-password --region $AWS_REGION \
   | docker login --username AWS --password-stdin ${ECR_URL%%/*}
 
 # збірка та завантаження
-docker build -t $ECR_URL:latest ./django-app
-docker push $ECR_URL:latest
+docker build -t ${ECR_URL}:latest ./django-app
+docker push ${ECR_URL}:latest
 
 # перевірка
 aws ecr list-images --repository-name django-app --region $AWS_REGION
 ```
 
+> Фігурні дужки в `${ECR_URL}:latest` обов'язкові. У zsh конструкція
+> `$ECR_URL:latest` розбирається як модифікатор `:l` (нижній регістр) плюс
+> текст `atest`, і образ отримує тег `django-appatest` — push падає з
+> `repository ... does not exist`. Лапки від цього не рятують, дужки — так.
+
 > Якщо ви на Apple Silicon чи іншій ARM-машині, збирайте під архітектуру нод:
-> `docker build --platform linux/amd64 -t $ECR_URL:latest ./django-app`
+> `docker build --platform linux/amd64 -t ${ECR_URL}:latest ./django-app`
 
 ## Крок 4. Встановлення Helm-чарта
 
