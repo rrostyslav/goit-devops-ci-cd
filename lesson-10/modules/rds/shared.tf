@@ -107,9 +107,14 @@ locals {
 # вимагає підмережі щонайменше у двох зонах доступності — навіть для
 # single-AZ інстанса, бо інакше йому не буде куди переїхати при відмові зони.
 
+# УВАГА: поле `description` у ресурсів нижче — це рядок, який їде в API AWS, а
+# не коментар. RDS відхиляє в ньому будь-які «non-printable control characters»,
+# EC2 — узагалі все за межами ASCII. Кирилиця тут валить apply з
+# InvalidParameterValue, тому всі описи англійською. На коментарі й на теги це
+# не поширюється: теги Unicode приймають спокійно.
 resource "aws_db_subnet_group" "this" {
   name        = "${var.name}-subnet-group"
-  description = "Підмережі для ${var.name}"
+  description = "Subnets for ${var.name}"
   subnet_ids  = var.subnet_ids
 
   tags = merge(var.tags, { Name = "${var.name}-subnet-group" })
@@ -144,7 +149,7 @@ resource "aws_db_subnet_group" "this" {
 
 resource "aws_security_group" "this" {
   name_prefix = "${var.name}-rds-"
-  description = "Доступ до бази даних ${var.name}"
+  description = "Database access for ${var.name}"
   vpc_id      = var.vpc_id
 
   tags = merge(var.tags, { Name = "${var.name}-rds-sg" })
@@ -161,7 +166,7 @@ resource "aws_vpc_security_group_ingress_rule" "cidr" {
   for_each = toset(var.allowed_cidr_blocks)
 
   security_group_id = aws_security_group.this.id
-  description       = "Доступ до БД з ${each.value}"
+  description       = "Database access from ${each.value}"
 
   cidr_ipv4   = each.value
   from_port   = local.port
@@ -178,7 +183,7 @@ resource "aws_vpc_security_group_ingress_rule" "security_group" {
   count = length(var.allowed_security_group_ids)
 
   security_group_id = aws_security_group.this.id
-  description       = "Доступ до БД з дозволеної security group"
+  description       = "Database access from an allowed security group"
 
   referenced_security_group_id = var.allowed_security_group_ids[count.index]
   from_port                    = local.port
@@ -190,7 +195,7 @@ resource "aws_vpc_security_group_ingress_rule" "security_group" {
 
 resource "aws_vpc_security_group_egress_rule" "all" {
   security_group_id = aws_security_group.this.id
-  description       = "Вихідний трафік без обмежень"
+  description       = "Unrestricted outbound traffic"
 
   cidr_ipv4   = "0.0.0.0/0"
   ip_protocol = "-1"
@@ -210,7 +215,7 @@ resource "aws_vpc_security_group_egress_rule" "all" {
 resource "aws_db_parameter_group" "this" {
   name_prefix = "${var.name}-"
   family      = local.parameter_group_family
-  description = "Параметри рівня інстанса для ${var.name}"
+  description = "Instance-level parameters for ${var.name}"
 
   dynamic "parameter" {
     for_each = local.parameters

@@ -206,6 +206,13 @@ module "rds" {
   deletion_protection = false
   skip_final_snapshot = true
 
+  # Дефолт модуля — 7 днів, і для проду це правильно. Але акаунт на Free-плані
+  # AWS відхиляє таке значення:
+  #   FreeTierRestrictionError: The specified backup retention period exceeds
+  #   the maximum available to free tier customers.
+  # Той самий клас обмеження, що й зі списком дозволених типів інстансів.
+  backup_retention_period = 1
+
   tags = {
     Project = "goit-ci-cd"
     Lesson  = "10"

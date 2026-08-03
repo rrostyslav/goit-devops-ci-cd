@@ -107,7 +107,7 @@ resource "aws_rds_cluster_parameter_group" "this" {
 
   name_prefix = "${var.name}-cluster-"
   family      = local.parameter_group_family
-  description = "Параметри рівня кластера для ${var.name}"
+  description = "Cluster-level parameters for ${var.name}"
 
   dynamic "parameter" {
     for_each = var.cluster_parameters
