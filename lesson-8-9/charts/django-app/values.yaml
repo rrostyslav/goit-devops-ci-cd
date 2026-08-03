@@ -13,7 +13,7 @@
 # Актуальний URL: `terraform output -raw ecr_repository_url`
 image:
   repository: 918349930062.dkr.ecr.us-west-2.amazonaws.com/django-app
-  tag: "latest"
+  tag: "1"
   pullPolicy: IfNotPresent
 
 # Секрети для приватних реєстрів. Для ECR не потрібні: ноди тягнуть образи
